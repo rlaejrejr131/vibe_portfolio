@@ -8,7 +8,6 @@ const REVIEWS_API_URL = 'https://api.themoviedb.org/3/movie';
 const VIDEOS_API_URL = 'https://api.themoviedb.org/3/movie';
 const RATING_API_URL = 'https://api.themoviedb.org/3/movie';
 const GUEST_SESSION_URL = 'https://api.themoviedb.org/3/authentication/guest_session/new';
-const ACCOUNT_STATES_URL = 'https://api.themoviedb.org/3/movie';
 
 // Guest Session ID
 let guestSessionId = null;
@@ -154,10 +153,6 @@ function displayMovies() {
     // 클릭 이벤트 추가
     attachMovieClickEvents(moviesContainer);
     
-    // 각 영화의 평점 로드
-    moviesToShow.forEach(movie => {
-        loadMovieRating(movie.id);
-    });
     
     // 더보기 버튼 표시/숨김 처리
     if (displayedCount >= allMovies.length) {
@@ -181,10 +176,6 @@ function displayPopularMovies() {
     // 클릭 이벤트 추가
     attachMovieClickEvents(moviesContainer);
     
-    // 각 영화의 평점 로드
-    moviesToShow.forEach(movie => {
-        loadMovieRating(movie.id);
-    });
     
     // 더보기 버튼 표시/숨김 처리
     if (displayedPopularCount >= allPopularMovies.length) {
@@ -292,7 +283,6 @@ async function openModal(movie) {
     
     // 현재 영화 ID 저장
     currentMovieId = movie.id;
-    selectedRating = 0;
     
     // 모달 헤더 초기화
     modalHeader.innerHTML = '<div class="modal-loading">로딩 중...</div>';
@@ -310,16 +300,24 @@ async function openModal(movie) {
     // 리뷰 로드
     loadReviews(movie.id);
     
-    // 평점 이벤트 설정 (먼저 설정)
+    // 평점 이벤트 설정
     setupRatingEvents();
     
-    // 평점 상태 확인 (비동기로 완료 후 UI 업데이트)
-    await checkRatingStatus(movie.id);
+    // 평점 초기화
+    resetRating();
 }
 
 // 모달 닫기
 function closeModal() {
     const modal = document.getElementById('movieModal');
+    
+    // 재생 중인 영상 정지 및 초기화
+    const iframe = modal.querySelector('.modal-video');
+    if (iframe) {
+        // iframe의 src를 제거하여 영상 정지 및 초기화
+        iframe.src = '';
+    }
+    
     modal.classList.remove('active');
     document.body.style.overflow = 'auto';
 }
@@ -493,39 +491,6 @@ function createReviewCard(review) {
     `;
 }
 
-// 영화 카드에 평점 로드
-async function loadMovieRating(movieId) {
-    if (!guestSessionId) {
-        return;
-    }
-    
-    try {
-        const response = await fetch(
-            `${ACCOUNT_STATES_URL}/${movieId}/account_states?api_key=${API_KEY}&guest_session_id=${guestSessionId}`
-        );
-        
-        if (response.ok) {
-            const data = await response.json();
-            const rated = data.rated;
-            
-            if (rated && rated.value) {
-                // 평점이 있는 경우 카드에 표시
-                const ratingElement = document.getElementById(`movie-rating-${movieId}`);
-                if (ratingElement) {
-                    const ratingNumber = ratingElement.querySelector('.rating-number');
-                    if (ratingNumber) {
-                        ratingNumber.textContent = rated.value;
-                    }
-                    ratingElement.style.display = 'flex';
-                }
-            }
-        }
-    } catch (error) {
-        // 오류는 무시 (평점이 없거나 로드 실패)
-        console.log('평점 로드 오류:', error);
-    }
-}
-
 // 리뷰 전체/요약 토글
 function toggleReview(reviewId) {
     const reviewCard = document.getElementById(reviewId);
@@ -551,10 +516,17 @@ async function createGuestSession() {
         if (response.ok) {
             const data = await response.json();
             guestSessionId = data.guest_session_id;
-            console.log('Guest Session 생성 완료');
+            console.log('Guest Session 생성 완료:', guestSessionId);
+            return true;
+        } else {
+            console.error('Guest Session 생성 실패:', response.status, response.statusText);
+            const errorData = await response.json().catch(() => ({}));
+            console.error('오류 상세:', errorData);
+            return false;
         }
     } catch (error) {
         console.error('Guest Session 생성 오류:', error);
+        return false;
     }
 }
 
@@ -636,6 +608,11 @@ function updateStarRating(rating) {
 // 별점 하이라이트
 function highlightStars(rating) {
     const stars = document.querySelectorAll('.star');
+    if (stars.length === 0) {
+        console.warn('별점 요소를 찾을 수 없습니다.');
+        return;
+    }
+    
     stars.forEach((star) => {
         const starRating = parseInt(star.dataset.rating);
         if (starRating <= rating) {
@@ -644,13 +621,33 @@ function highlightStars(rating) {
             star.classList.remove('active');
         }
     });
+    
+    console.log(`별점 하이라이트: ${rating}/10, 활성화된 별 개수: ${document.querySelectorAll('.star.active').length}`);
 }
 
 // 별점 초기화
 function resetRating() {
     selectedRating = 0;
     const ratingValue = document.getElementById('ratingValue');
-    ratingValue.textContent = '0';
+    const submitBtn = document.getElementById('submitRatingBtn');
+    const deleteBtn = document.getElementById('deleteRatingBtn');
+    
+    if (ratingValue) {
+        ratingValue.textContent = '0';
+    }
+    
+    // 제출 버튼 초기화
+    if (submitBtn) {
+        submitBtn.textContent = '평점 제출';
+        submitBtn.disabled = false;
+    }
+    
+    // 삭제 버튼 숨기기
+    if (deleteBtn) {
+        deleteBtn.style.display = 'none';
+        deleteBtn.disabled = false;
+    }
+    
     highlightStars(0);
     hideRatingMessage();
 }
@@ -695,9 +692,14 @@ async function submitRating(movieId, rating) {
     const submitBtn = document.getElementById('submitRatingBtn');
     const deleteBtn = document.getElementById('deleteRatingBtn');
     
+    // Guest Session이 없으면 생성 시도
     if (!guestSessionId) {
-        showRatingMessage('세션이 준비되지 않았습니다.', '#e50914');
-        return;
+        console.log('Guest Session이 없습니다. 생성 중...');
+        const created = await createGuestSession();
+        if (!created) {
+            showRatingMessage('세션이 준비되지 않았습니다.', '#e50914');
+            return;
+        }
     }
     
     try {
@@ -731,8 +733,23 @@ async function submitRating(movieId, rating) {
             } else {
                 throw new Error(data.status_message || '평점 등록에 실패했습니다.');
             }
+        } else if (response.status === 401) {
+            // 401 오류: Guest Session이 만료되었거나 유효하지 않음
+            console.warn('Guest Session이 만료되었거나 유효하지 않습니다. 새로운 Session 생성 중...');
+            guestSessionId = null; // 기존 Session 초기화
+            const created = await createGuestSession();
+            if (created) {
+                // 새로운 Session으로 재시도
+                console.log('새로운 Guest Session으로 재시도...');
+                await submitRating(movieId, rating);
+            } else {
+                console.error('새로운 Guest Session 생성 실패.');
+                showRatingMessage('세션 생성에 실패했습니다. 페이지를 새로고침해주세요.', '#e50914');
+                submitBtn.disabled = false;
+                submitBtn.textContent = '평점 제출';
+            }
         } else {
-            const errorData = await response.json();
+            const errorData = await response.json().catch(() => ({}));
             throw new Error(errorData.status_message || '평점 등록에 실패했습니다.');
         }
     } catch (error) {
@@ -760,66 +777,6 @@ function removeMovieCardRating(movieId) {
     const ratingElement = document.getElementById(`movie-rating-${movieId}`);
     if (ratingElement) {
         ratingElement.style.display = 'none';
-    }
-}
-
-// 평점 상태 확인
-async function checkRatingStatus(movieId) {
-    if (!guestSessionId) {
-        // Guest Session이 없으면 초기화만
-        resetRating();
-        return;
-    }
-    
-    try {
-        const response = await fetch(
-            `${ACCOUNT_STATES_URL}/${movieId}/account_states?api_key=${API_KEY}&guest_session_id=${guestSessionId}`
-        );
-        
-        if (response.ok) {
-            const data = await response.json();
-            const rated = data.rated;
-            
-            if (rated && rated.value) {
-                // 이미 평점이 있는 경우
-                const existingRating = rated.value;
-                selectedRating = existingRating;
-                
-                // 별점 업데이트
-                updateStarRating(existingRating);
-                
-                // UI 업데이트
-                const submitBtn = document.getElementById('submitRatingBtn');
-                const deleteBtn = document.getElementById('deleteRatingBtn');
-                const ratingMessage = document.getElementById('ratingMessage');
-                const ratingValue = document.getElementById('ratingValue');
-                
-                // 평점 값 표시
-                ratingValue.textContent = existingRating;
-                
-                // 버튼 상태
-                submitBtn.textContent = '평점 제출 완료';
-                submitBtn.disabled = true;
-                deleteBtn.style.display = 'block';
-                
-                // 메시지 표시 (2초 후 사라짐)
-                showRatingMessage(`내 평점: ${existingRating}/10`, '#4CAF50');
-            } else {
-                // 평점이 없는 경우 - 초기화
-                resetRating();
-                const deleteBtn = document.getElementById('deleteRatingBtn');
-                if (deleteBtn) {
-                    deleteBtn.style.display = 'none';
-                }
-            }
-        } else {
-            // API 오류 시 초기화
-            resetRating();
-        }
-    } catch (error) {
-        console.error('평점 상태 확인 오류:', error);
-        // 오류 시 초기화
-        resetRating();
     }
 }
 
@@ -871,11 +828,6 @@ async function deleteRating(movieId) {
                 
                 // 영화 카드의 평점도 제거
                 removeMovieCardRating(movieId);
-                
-                // 평점 상태 다시 확인 (삭제 확인)
-                setTimeout(() => {
-                    checkRatingStatus(movieId);
-                }, 500);
             } else {
                 // status_code가 13이 아니어도 성공일 수 있음
                 console.log('삭제 응답:', data);
@@ -897,6 +849,21 @@ async function deleteRating(movieId) {
                 setTimeout(() => {
                     checkRatingStatus(movieId);
                 }, 500);
+            }
+        } else if (response.status === 401) {
+            // 401 오류: Guest Session이 만료되었거나 유효하지 않음
+            console.warn('Guest Session이 만료되었거나 유효하지 않습니다. 새로운 Session 생성 중...');
+            guestSessionId = null; // 기존 Session 초기화
+            const created = await createGuestSession();
+            if (created) {
+                // 새로운 Session으로 재시도
+                console.log('새로운 Guest Session으로 재시도...');
+                await deleteRating(movieId);
+            } else {
+                console.error('새로운 Guest Session 생성 실패.');
+                showRatingMessage('세션 생성에 실패했습니다. 페이지를 새로고침해주세요.', '#e50914');
+                deleteBtn.disabled = false;
+                deleteBtn.textContent = '평점 삭제';
             }
         } else {
             // 응답이 ok가 아닌 경우
