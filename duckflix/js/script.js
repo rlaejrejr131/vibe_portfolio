@@ -685,16 +685,30 @@ function createReviewCard(review, movieId) {
 }
 
 // 평점 및 리뷰 일괄 등록 이벤트 설정
+let ratingReviewEventsInitialized = false;
+
 function setupRatingReviewEvents(movieId) {
     const reviewTextarea = document.getElementById('reviewTextarea');
     const submitBtn = document.getElementById('submitRatingReviewBtn');
     
     if (!submitBtn) return;
     
+    // 이벤트 리스너가 이미 등록되어 있으면 다시 등록하지 않음
+    if (ratingReviewEventsInitialized) {
+        return;
+    }
+    
     // 일괄 등록 버튼 클릭
     submitBtn.addEventListener('click', async function() {
+        // 모달이 열려있지 않으면 실행하지 않음
+        const modal = document.getElementById('movieModal');
+        if (!modal || !modal.classList.contains('active')) {
+            return;
+        }
+        
+        const currentTextarea = document.getElementById('reviewTextarea');
         const rating = selectedRating || 0; // 평점이 없으면 0점으로 저장
-        const reviewText = reviewTextarea ? reviewTextarea.value.trim() : '';
+        const reviewText = currentTextarea ? currentTextarea.value.trim() : '';
         
         // 리뷰가 필수
         if (!reviewText) {
@@ -702,8 +716,14 @@ function setupRatingReviewEvents(movieId) {
             return;
         }
         
+        // 현재 영화 ID 사용 (전역 변수)
+        if (!currentMovieId) {
+            alert('영화 정보를 찾을 수 없습니다.');
+            return;
+        }
+        
         // 평점 및 리뷰 일괄 등록
-        await submitRatingAndReview(movieId, rating, reviewText);
+        await submitRatingAndReview(currentMovieId, rating, reviewText);
     });
     
     // Ctrl+Enter 키로 제출
@@ -715,6 +735,8 @@ function setupRatingReviewEvents(movieId) {
             }
         });
     }
+    
+    ratingReviewEventsInitialized = true;
 }
 
 // 평점 및 리뷰 일괄 등록
