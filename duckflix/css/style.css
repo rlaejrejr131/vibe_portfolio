@@ -144,6 +144,33 @@ body {
     margin-top: 5px;
 }
 
+.movie-my-rating {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 8px;
+    padding: 4px 8px;
+    background-color: rgba(255, 215, 0, 0.2);
+    border-radius: 4px;
+    border-left: 2px solid #ffd700;
+}
+
+.rating-star {
+    font-size: 0.9rem;
+    color: #ffd700;
+}
+
+.rating-value-text {
+    font-size: 0.85rem;
+    color: #ffd700;
+    font-weight: 600;
+}
+
+.rating-number {
+    font-weight: 700;
+    color: #ffffff;
+}
+
 /* Loading */
 .loading {
     width: 100%;
@@ -377,11 +404,179 @@ body {
     flex: 1;
 }
 
+/* Rating Section */
+.rating-section {
+    margin-bottom: 40px;
+    padding-bottom: 30px;
+    border-bottom: 1px solid #333;
+    text-align: center;
+}
+
+.rating-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 20px;
+    color: #ffffff;
+    text-align: center;
+}
+
+.rating-input-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+}
+
+.star-rating {
+    display: flex;
+    gap: 8px;
+    cursor: pointer;
+    justify-content: center;
+    align-items: center;
+}
+
+.star-group {
+    position: relative;
+    width: 1.8rem;
+    height: 1.8rem;
+    display: inline-block;
+}
+
+.star {
+    font-size: 1.8rem;
+    color: #ffd700;
+    transition: color 0.2s, transform 0.2s, filter 0.2s;
+    user-select: none;
+    cursor: pointer;
+    position: absolute;
+    top: 0;
+    line-height: 1;
+    width: 1.8rem;
+    height: 1.8rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    filter: grayscale(100%);
+    opacity: 0.5;
+}
+
+.star:hover {
+    filter: grayscale(0%);
+    opacity: 1;
+}
+
+.star.active {
+    filter: grayscale(0%);
+    opacity: 1;
+    color: #ffd700;
+}
+
+.star-group .star:nth-child(1) {
+    left: 0;
+    clip-path: polygon(0 0, 50% 0, 50% 100%, 0 100%);
+    overflow: hidden;
+}
+
+.star-group .star:nth-child(2) {
+    left: 0;
+    clip-path: polygon(50% 0, 100% 0, 100% 100%, 50% 100%);
+    overflow: hidden;
+}
+
+
+.rating-value-display {
+    color: #ffd700;
+    font-weight: 700;
+    font-size: 2.5rem;
+    min-width: 100px;
+    text-align: center;
+}
+
+.rating-buttons {
+    display: flex;
+    gap: 10px;
+}
+
+.submit-rating-btn {
+    padding: 10px 24px;
+    background-color: #e50914;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s, transform 0.2s;
+}
+
+.submit-rating-btn:hover:not(:disabled) {
+    background-color: #f40612;
+    transform: translateY(-2px);
+}
+
+.submit-rating-btn:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.submit-rating-btn:disabled {
+    background-color: #666;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.delete-rating-btn {
+    padding: 10px 24px;
+    background-color: transparent;
+    color: #e50914;
+    border: 2px solid #e50914;
+    border-radius: 4px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s, transform 0.2s;
+}
+
+.delete-rating-btn:hover:not(:disabled) {
+    background-color: #e50914;
+    color: #ffffff;
+    transform: translateY(-2px);
+}
+
+.delete-rating-btn:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.delete-rating-btn:disabled {
+    background-color: #666;
+    border-color: #666;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.rating-message {
+    margin-top: 15px;
+    font-size: 1rem;
+    font-weight: 500;
+    height: 30px;
+    line-height: 30px;
+    text-align: center;
+    opacity: 0;
+    transition: opacity 0.5s ease-out;
+    overflow: hidden;
+    display: block;
+}
+
+.rating-message.show {
+    opacity: 1;
+}
+
 .reviews-title {
     font-size: 1.5rem;
     font-weight: 600;
     margin-bottom: 20px;
     color: #ffffff;
+    margin-top: 30px;
 }
 
 .reviews-container {
@@ -429,6 +624,29 @@ body {
     word-wrap: break-word;
 }
 
+.review-text-short,
+.review-text-full {
+    margin-bottom: 10px;
+}
+
+.review-toggle-btn {
+    background-color: transparent;
+    border: 1px solid #e50914;
+    color: #e50914;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition: all 0.3s;
+    margin-top: 10px;
+}
+
+.review-toggle-btn:hover {
+    background-color: #e50914;
+    color: #ffffff;
+}
+
 .no-reviews {
     text-align: center;
     padding: 40px 20px;
@@ -459,6 +677,30 @@ body {
 
     .modal-body {
         padding: 20px;
+    }
+
+    .rating-input-container {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 15px;
+    }
+
+    .star-rating {
+        gap: 3px;
+    }
+
+    .star {
+        font-size: 1.5rem;
+    }
+
+    .rating-buttons {
+        width: 100%;
+        flex-direction: column;
+    }
+
+    .submit-rating-btn,
+    .delete-rating-btn {
+        width: 100%;
     }
 
     .review-header {

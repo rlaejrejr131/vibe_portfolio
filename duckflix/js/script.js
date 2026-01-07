@@ -6,6 +6,16 @@ const POPULAR_API_URL = 'https://api.themoviedb.org/3/movie/popular';
 const IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w500';
 const REVIEWS_API_URL = 'https://api.themoviedb.org/3/movie';
 const VIDEOS_API_URL = 'https://api.themoviedb.org/3/movie';
+const RATING_API_URL = 'https://api.themoviedb.org/3/movie';
+const GUEST_SESSION_URL = 'https://api.themoviedb.org/3/authentication/guest_session/new';
+const ACCOUNT_STATES_URL = 'https://api.themoviedb.org/3/movie';
+
+// Guest Session ID
+let guestSessionId = null;
+// 현재 모달의 영화 ID
+let currentMovieId = null;
+// 선택된 평점
+let selectedRating = 0;
 
 // 현재 상영 중인 영화 상태
 let allMovies = [];
@@ -19,6 +29,9 @@ const MOVIES_PER_PAGE = 10;
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Duckflix가 로드되었습니다!');
+    
+    // Guest Session 생성
+    createGuestSession();
     
     // 헤더 스크롤 효과
     initHeaderScroll();
@@ -141,6 +154,11 @@ function displayMovies() {
     // 클릭 이벤트 추가
     attachMovieClickEvents(moviesContainer);
     
+    // 각 영화의 평점 로드
+    moviesToShow.forEach(movie => {
+        loadMovieRating(movie.id);
+    });
+    
     // 더보기 버튼 표시/숨김 처리
     if (displayedCount >= allMovies.length) {
         loadMoreBtn.style.display = 'none';
@@ -162,6 +180,11 @@ function displayPopularMovies() {
     
     // 클릭 이벤트 추가
     attachMovieClickEvents(moviesContainer);
+    
+    // 각 영화의 평점 로드
+    moviesToShow.forEach(movie => {
+        loadMovieRating(movie.id);
+    });
     
     // 더보기 버튼 표시/숨김 처리
     if (displayedPopularCount >= allPopularMovies.length) {
@@ -212,6 +235,10 @@ function createMovieCard(movie) {
             <div class="movie-info">
                 <div class="movie-title">${title}</div>
                 ${releaseDateFormatted ? `<div class="movie-release-date">${releaseDateFormatted}</div>` : ''}
+                <div class="movie-my-rating" id="movie-rating-${movie.id}" style="display: none;">
+                    <span class="rating-star">⭐</span>
+                    <span class="rating-value-text">내 평점: <span class="rating-number">0</span>/10</span>
+                </div>
             </div>
         </div>
     `;
@@ -258,10 +285,14 @@ function initModal() {
 }
 
 // 모달 열기
-function openModal(movie) {
+async function openModal(movie) {
     const modal = document.getElementById('movieModal');
     const modalHeader = document.getElementById('modalHeader');
     const reviewsContainer = document.getElementById('reviewsContainer');
+    
+    // 현재 영화 ID 저장
+    currentMovieId = movie.id;
+    selectedRating = 0;
     
     // 모달 헤더 초기화
     modalHeader.innerHTML = '<div class="modal-loading">로딩 중...</div>';
@@ -278,6 +309,12 @@ function openModal(movie) {
     
     // 리뷰 로드
     loadReviews(movie.id);
+    
+    // 평점 이벤트 설정 (먼저 설정)
+    setupRatingEvents();
+    
+    // 평점 상태 확인 (비동기로 완료 후 UI 업데이트)
+    await checkRatingStatus(movie.id);
 }
 
 // 모달 닫기
@@ -434,18 +471,449 @@ function createReviewCard(review) {
     const rating = review.author_details?.rating;
     const createdAt = review.created_at ? new Date(review.created_at).toLocaleDateString('ko-KR') : '';
     
-    // HTML 태그 제거하고 텍스트만 추출 (간단한 처리)
-    const textContent = content.replace(/<[^>]*>/g, '').substring(0, 500);
-    const truncatedContent = content.length > 500 ? textContent + '...' : textContent;
+    // HTML 태그 제거하고 텍스트만 추출
+    const fullText = content.replace(/<[^>]*>/g, '');
+    const isLong = fullText.length > 500;
+    const truncatedText = isLong ? fullText.substring(0, 500) + '...' : fullText;
+    const reviewId = `review-${review.id || Math.random().toString(36).substr(2, 9)}`;
     
     return `
-        <div class="review-card">
+        <div class="review-card" id="${reviewId}">
             <div class="review-header">
                 <div class="review-author">${author}</div>
                 ${rating ? `<div class="review-rating">⭐ ${rating}/10</div>` : ''}
             </div>
             ${createdAt ? `<div class="review-date">${createdAt}</div>` : ''}
-            <div class="review-content">${truncatedContent}</div>
+            <div class="review-content">
+                <div class="review-text-short">${truncatedText}</div>
+                ${isLong ? `<div class="review-text-full" style="display: none;">${fullText}</div>` : ''}
+                ${isLong ? `<button class="review-toggle-btn" onclick="toggleReview('${reviewId}')">전체 보기</button>` : ''}
+            </div>
         </div>
     `;
+}
+
+// 영화 카드에 평점 로드
+async function loadMovieRating(movieId) {
+    if (!guestSessionId) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(
+            `${ACCOUNT_STATES_URL}/${movieId}/account_states?api_key=${API_KEY}&guest_session_id=${guestSessionId}`
+        );
+        
+        if (response.ok) {
+            const data = await response.json();
+            const rated = data.rated;
+            
+            if (rated && rated.value) {
+                // 평점이 있는 경우 카드에 표시
+                const ratingElement = document.getElementById(`movie-rating-${movieId}`);
+                if (ratingElement) {
+                    const ratingNumber = ratingElement.querySelector('.rating-number');
+                    if (ratingNumber) {
+                        ratingNumber.textContent = rated.value;
+                    }
+                    ratingElement.style.display = 'flex';
+                }
+            }
+        }
+    } catch (error) {
+        // 오류는 무시 (평점이 없거나 로드 실패)
+        console.log('평점 로드 오류:', error);
+    }
+}
+
+// 리뷰 전체/요약 토글
+function toggleReview(reviewId) {
+    const reviewCard = document.getElementById(reviewId);
+    const shortText = reviewCard.querySelector('.review-text-short');
+    const fullText = reviewCard.querySelector('.review-text-full');
+    const toggleBtn = reviewCard.querySelector('.review-toggle-btn');
+    
+    if (fullText && fullText.style.display === 'none') {
+        shortText.style.display = 'none';
+        fullText.style.display = 'block';
+        toggleBtn.textContent = '요약 보기';
+    } else {
+        shortText.style.display = 'block';
+        if (fullText) fullText.style.display = 'none';
+        toggleBtn.textContent = '전체 보기';
+    }
+}
+
+// Guest Session 생성
+async function createGuestSession() {
+    try {
+        const response = await fetch(`${GUEST_SESSION_URL}?api_key=${API_KEY}`);
+        if (response.ok) {
+            const data = await response.json();
+            guestSessionId = data.guest_session_id;
+            console.log('Guest Session 생성 완료');
+        }
+    } catch (error) {
+        console.error('Guest Session 생성 오류:', error);
+    }
+}
+
+// 평점 이벤트 설정
+function setupRatingEvents() {
+    const stars = document.querySelectorAll('.star');
+    const submitBtn = document.getElementById('submitRatingBtn');
+    const deleteBtn = document.getElementById('deleteRatingBtn');
+    const ratingMessage = document.getElementById('ratingMessage');
+    
+    // 별점 클릭 이벤트
+    stars.forEach(star => {
+        star.addEventListener('click', function() {
+            selectedRating = parseInt(this.dataset.rating);
+            updateStarRating(selectedRating);
+            
+            // 평점이 변경되면 제출 버튼 활성화
+            const submitBtn = document.getElementById('submitRatingBtn');
+            const deleteBtn = document.getElementById('deleteRatingBtn');
+            const ratingMessage = document.getElementById('ratingMessage');
+            
+            submitBtn.disabled = false;
+            submitBtn.textContent = '평점 제출';
+            
+            // 기존 평점이 있었던 경우 메시지 표시
+            if (deleteBtn.style.display === 'block') {
+                showRatingMessage('새로운 평점을 선택했습니다.', '#808080');
+            } else {
+                hideRatingMessage();
+            }
+        });
+        
+        star.addEventListener('mouseenter', function() {
+            const rating = parseInt(this.dataset.rating);
+            highlightStars(rating);
+        });
+    });
+    
+    // 별점 영역에서 마우스가 벗어나면 선택된 평점으로 복원
+    document.getElementById('starRating').addEventListener('mouseleave', function() {
+        highlightStars(selectedRating);
+    });
+    
+    // 평점 제출 버튼
+    submitBtn.addEventListener('click', function() {
+        if (selectedRating === 0) {
+            showRatingMessage('평점을 선택해주세요.', '#e50914');
+            return;
+        }
+        
+        if (!guestSessionId) {
+            showRatingMessage('세션이 준비되지 않았습니다. 잠시 후 다시 시도해주세요.', '#e50914');
+            return;
+        }
+        
+        submitRating(currentMovieId, selectedRating);
+    });
+    
+    // 평점 삭제 버튼
+    deleteBtn.addEventListener('click', function() {
+        if (!guestSessionId) {
+            showRatingMessage('세션이 준비되지 않았습니다. 잠시 후 다시 시도해주세요.', '#e50914');
+            return;
+        }
+        
+        deleteRating(currentMovieId);
+    });
+}
+
+// 별점 업데이트
+function updateStarRating(rating) {
+    const ratingValue = document.getElementById('ratingValue');
+    if (ratingValue) {
+        ratingValue.textContent = rating;
+    }
+    highlightStars(rating);
+}
+
+// 별점 하이라이트
+function highlightStars(rating) {
+    const stars = document.querySelectorAll('.star');
+    stars.forEach((star) => {
+        const starRating = parseInt(star.dataset.rating);
+        if (starRating <= rating) {
+            star.classList.add('active');
+        } else {
+            star.classList.remove('active');
+        }
+    });
+}
+
+// 별점 초기화
+function resetRating() {
+    selectedRating = 0;
+    const ratingValue = document.getElementById('ratingValue');
+    ratingValue.textContent = '0';
+    highlightStars(0);
+    hideRatingMessage();
+}
+
+// 평점 메시지 표시 (2초 후 자동으로 사라짐)
+function showRatingMessage(message, color = '#4CAF50') {
+    const ratingMessage = document.getElementById('ratingMessage');
+    if (!ratingMessage) return;
+    
+    // 기존 타이머가 있으면 취소
+    if (ratingMessage.timer) {
+        clearTimeout(ratingMessage.timer);
+    }
+    
+    ratingMessage.textContent = message;
+    ratingMessage.style.color = color;
+    ratingMessage.classList.add('show');
+    
+    // 2초 후 서서히 사라지게
+    ratingMessage.timer = setTimeout(() => {
+        hideRatingMessage();
+    }, 2000);
+}
+
+// 평점 메시지 숨기기
+function hideRatingMessage() {
+    const ratingMessage = document.getElementById('ratingMessage');
+    if (!ratingMessage) return;
+    
+    ratingMessage.classList.remove('show');
+    
+    // 애니메이션 완료 후 텍스트 제거
+    setTimeout(() => {
+        if (!ratingMessage.classList.contains('show')) {
+            ratingMessage.textContent = '';
+        }
+    }, 500);
+}
+
+// 평점 제출
+async function submitRating(movieId, rating) {
+    const submitBtn = document.getElementById('submitRatingBtn');
+    const deleteBtn = document.getElementById('deleteRatingBtn');
+    
+    if (!guestSessionId) {
+        showRatingMessage('세션이 준비되지 않았습니다.', '#e50914');
+        return;
+    }
+    
+    try {
+        submitBtn.disabled = true;
+        submitBtn.textContent = '제출 중...';
+        
+        const response = await fetch(
+            `${RATING_API_URL}/${movieId}/rating?api_key=${API_KEY}&guest_session_id=${guestSessionId}`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    value: rating
+                })
+            }
+        );
+        
+        if (response.ok) {
+            const data = await response.json();
+            if (data.status_code === 1 || data.status_code === 12) {
+                showRatingMessage('평점이 등록되었습니다!', '#4CAF50');
+                submitBtn.textContent = '평점 제출 완료';
+                submitBtn.disabled = true;
+                // 삭제 버튼 표시
+                deleteBtn.style.display = 'block';
+                
+                // 영화 카드의 평점도 업데이트
+                updateMovieCardRating(movieId, rating);
+            } else {
+                throw new Error(data.status_message || '평점 등록에 실패했습니다.');
+            }
+        } else {
+            const errorData = await response.json();
+            throw new Error(errorData.status_message || '평점 등록에 실패했습니다.');
+        }
+    } catch (error) {
+        console.error('평점 제출 오류:', error);
+        showRatingMessage(`오류: ${error.message}`, '#e50914');
+        submitBtn.disabled = false;
+        submitBtn.textContent = '평점 제출';
+    }
+}
+
+// 영화 카드의 평점 업데이트
+function updateMovieCardRating(movieId, rating) {
+    const ratingElement = document.getElementById(`movie-rating-${movieId}`);
+    if (ratingElement) {
+        const ratingNumber = ratingElement.querySelector('.rating-number');
+        if (ratingNumber) {
+            ratingNumber.textContent = rating;
+        }
+        ratingElement.style.display = 'flex';
+    }
+}
+
+// 영화 카드의 평점 제거
+function removeMovieCardRating(movieId) {
+    const ratingElement = document.getElementById(`movie-rating-${movieId}`);
+    if (ratingElement) {
+        ratingElement.style.display = 'none';
+    }
+}
+
+// 평점 상태 확인
+async function checkRatingStatus(movieId) {
+    if (!guestSessionId) {
+        // Guest Session이 없으면 초기화만
+        resetRating();
+        return;
+    }
+    
+    try {
+        const response = await fetch(
+            `${ACCOUNT_STATES_URL}/${movieId}/account_states?api_key=${API_KEY}&guest_session_id=${guestSessionId}`
+        );
+        
+        if (response.ok) {
+            const data = await response.json();
+            const rated = data.rated;
+            
+            if (rated && rated.value) {
+                // 이미 평점이 있는 경우
+                const existingRating = rated.value;
+                selectedRating = existingRating;
+                
+                // 별점 업데이트
+                updateStarRating(existingRating);
+                
+                // UI 업데이트
+                const submitBtn = document.getElementById('submitRatingBtn');
+                const deleteBtn = document.getElementById('deleteRatingBtn');
+                const ratingMessage = document.getElementById('ratingMessage');
+                const ratingValue = document.getElementById('ratingValue');
+                
+                // 평점 값 표시
+                ratingValue.textContent = existingRating;
+                
+                // 버튼 상태
+                submitBtn.textContent = '평점 제출 완료';
+                submitBtn.disabled = true;
+                deleteBtn.style.display = 'block';
+                
+                // 메시지 표시 (2초 후 사라짐)
+                showRatingMessage(`내 평점: ${existingRating}/10`, '#4CAF50');
+            } else {
+                // 평점이 없는 경우 - 초기화
+                resetRating();
+                const deleteBtn = document.getElementById('deleteRatingBtn');
+                if (deleteBtn) {
+                    deleteBtn.style.display = 'none';
+                }
+            }
+        } else {
+            // API 오류 시 초기화
+            resetRating();
+        }
+    } catch (error) {
+        console.error('평점 상태 확인 오류:', error);
+        // 오류 시 초기화
+        resetRating();
+    }
+}
+
+// 평점 삭제
+async function deleteRating(movieId) {
+    const deleteBtn = document.getElementById('deleteRatingBtn');
+    const submitBtn = document.getElementById('submitRatingBtn');
+    
+    if (!guestSessionId) {
+        showRatingMessage('세션이 준비되지 않았습니다.', '#e50914');
+        return;
+    }
+    
+    // 확인 다이얼로그
+    if (!confirm('등록한 평점을 삭제하시겠습니까?')) {
+        return;
+    }
+    
+    try {
+        deleteBtn.disabled = true;
+        deleteBtn.textContent = '삭제 중...';
+        
+        const deleteUrl = `${RATING_API_URL}/${movieId}/rating?api_key=${API_KEY}&guest_session_id=${guestSessionId}`;
+        console.log('평점 삭제 요청:', deleteUrl);
+        
+        const response = await fetch(deleteUrl, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        console.log('삭제 응답 상태:', response.status, response.statusText);
+        
+        if (response.ok) {
+            const data = await response.json();
+            // status_code 13은 삭제 성공
+            if (data.status_code === 13 || data.status_code === 1) {
+                showRatingMessage('평점이 삭제되었습니다.', '#4CAF50');
+                
+                // UI 초기화
+                resetRating();
+                deleteBtn.style.display = 'none';
+                deleteBtn.disabled = false;
+                deleteBtn.textContent = '평점 삭제';
+                submitBtn.disabled = false;
+                submitBtn.textContent = '평점 제출';
+                selectedRating = 0;
+                
+                // 영화 카드의 평점도 제거
+                removeMovieCardRating(movieId);
+                
+                // 평점 상태 다시 확인 (삭제 확인)
+                setTimeout(() => {
+                    checkRatingStatus(movieId);
+                }, 500);
+            } else {
+                // status_code가 13이 아니어도 성공일 수 있음
+                console.log('삭제 응답:', data);
+                showRatingMessage('평점이 삭제되었습니다.', '#4CAF50');
+                
+                // UI 초기화
+                resetRating();
+                deleteBtn.style.display = 'none';
+                deleteBtn.disabled = false;
+                deleteBtn.textContent = '평점 삭제';
+                submitBtn.disabled = false;
+                submitBtn.textContent = '평점 제출';
+                selectedRating = 0;
+                
+                // 영화 카드의 평점도 제거
+                removeMovieCardRating(movieId);
+                
+                // 평점 상태 다시 확인
+                setTimeout(() => {
+                    checkRatingStatus(movieId);
+                }, 500);
+            }
+        } else {
+            // 응답이 ok가 아닌 경우
+            let errorMessage = '평점 삭제에 실패했습니다.';
+            try {
+                const errorData = await response.json();
+                errorMessage = errorData.status_message || errorMessage;
+                console.error('삭제 오류 응답:', errorData);
+            } catch (e) {
+                console.error('삭제 오류:', response.status, response.statusText);
+            }
+            throw new Error(errorMessage);
+        }
+    } catch (error) {
+        console.error('평점 삭제 오류:', error);
+        showRatingMessage(`오류: ${error.message}`, '#e50914');
+        deleteBtn.disabled = false;
+        deleteBtn.textContent = '평점 삭제';
+    }
 }
