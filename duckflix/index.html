@@ -46,9 +46,9 @@
                 <div class="modal-loading">로딩 중...</div>
             </div>
             <div class="modal-body">
-                <!-- 평점 섹션 -->
-                <div class="rating-section">
-                    <h3 class="rating-title">평점 주기</h3>
+                <!-- 평점 및 리뷰 작성 섹션 -->
+                <div class="rating-review-section">
+                    <h3 class="rating-title">평점 및 리뷰 작성</h3>
                     <div class="rating-input-container">
                         <div class="rating-value-display">
                             <span id="ratingValue">0</span>/10
@@ -75,15 +75,16 @@
                                 <span class="star" data-rating="10">⭐</span>
                             </div>
                         </div>
-                        <div class="rating-buttons">
-                            <button class="submit-rating-btn" id="submitRatingBtn">평점 제출</button>
-                            <button class="delete-rating-btn" id="deleteRatingBtn" style="display: none;">평점 삭제</button>
-                        </div>
                     </div>
-                    <div class="rating-message" id="ratingMessage"></div>
+                    <div class="write-review-section">
+                        <textarea id="reviewTextarea" placeholder="리뷰를 작성해주세요..." rows="4"></textarea>
+                    </div>
+                    <div class="rating-buttons">
+                        <button class="submit-rating-review-btn" id="submitRatingReviewBtn">평점 및 리뷰 등록</button>
+                    </div>
                 </div>
 
-                <h3 class="reviews-title">리뷰</h3>
+                <h3 class="reviews-title">리뷰 <span id="reviewsCount" class="reviews-count">(0)</span></h3>
                 <div class="reviews-container" id="reviewsContainer">
                     <div class="loading">리뷰를 불러오는 중...</div>
                 </div>

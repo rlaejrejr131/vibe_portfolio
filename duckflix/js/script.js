@@ -153,6 +153,10 @@ function displayMovies() {
     // 클릭 이벤트 추가
     attachMovieClickEvents(moviesContainer);
     
+    // 각 영화의 평균 평점 표시
+    moviesToShow.forEach(movie => {
+        updateMovieCardAverageRating(movie.id);
+    });
     
     // 더보기 버튼 표시/숨김 처리
     if (displayedCount >= allMovies.length) {
@@ -176,6 +180,10 @@ function displayPopularMovies() {
     // 클릭 이벤트 추가
     attachMovieClickEvents(moviesContainer);
     
+    // 각 영화의 평균 평점 표시
+    moviesToShow.forEach(movie => {
+        updateMovieCardAverageRating(movie.id);
+    });
     
     // 더보기 버튼 표시/숨김 처리
     if (displayedPopularCount >= allPopularMovies.length) {
@@ -228,9 +236,10 @@ function createMovieCard(movie) {
                 ${releaseDateFormatted ? `<div class="movie-release-date">${releaseDateFormatted}</div>` : ''}
                 <div class="movie-my-rating" id="movie-rating-${movie.id}" style="display: none;">
                     <span class="rating-star">⭐</span>
-                    <span class="rating-value-text">내 평점: <span class="rating-number">0</span>/10</span>
+                    <span class="rating-value-text">평점: <span class="rating-number">0</span></span>
                 </div>
             </div>
+            <div class="movie-review-count" id="movie-review-count-${movie.id}" style="display: none;"></div>
         </div>
     `;
 }
@@ -239,6 +248,7 @@ function createMovieCard(movie) {
 function attachMovieClickEvents(container) {
     const movieCards = container.querySelectorAll('.movie-card');
     movieCards.forEach(card => {
+        // 클릭 이벤트
         card.addEventListener('click', function() {
             const movieId = this.dataset.movieId;
             const movieTitle = this.dataset.movieTitle;
@@ -251,6 +261,19 @@ function attachMovieClickEvents(container) {
                 poster: moviePoster,
                 releaseDate: movieDate
             });
+        });
+        
+        // 호버 이벤트 - 리뷰 개수 표시
+        card.addEventListener('mouseenter', function() {
+            const movieId = parseInt(this.dataset.movieId);
+            loadReviewCount(movieId, this);
+        });
+        
+        card.addEventListener('mouseleave', function() {
+            const reviewCountElement = this.querySelector('.movie-review-count');
+            if (reviewCountElement) {
+                reviewCountElement.style.display = 'none';
+            }
         });
     });
 }
@@ -300,10 +323,13 @@ async function openModal(movie) {
     // 리뷰 로드
     loadReviews(movie.id);
     
-    // 평점 이벤트 설정
+    // 평점 및 리뷰 일괄 등록 이벤트 설정
+    setupRatingReviewEvents(movie.id);
+    
+    // 평점 이벤트 설정 (별점 선택용)
     setupRatingEvents();
     
-    // 평점 초기화
+    // 평점 초기화 (등록한 평점 표시 안 함)
     resetRating();
 }
 
@@ -434,9 +460,94 @@ function loadYouTubeIframe(videoKey, container) {
     });
 }
 
+// LocalStorage에 리뷰 저장 (평점 포함)
+function saveReviewToLocalStorage(movieId, reviewText, rating) {
+    try {
+        const reviews = JSON.parse(localStorage.getItem('duckflix_reviews') || '{}');
+        if (!reviews[movieId]) {
+            reviews[movieId] = [];
+        }
+        
+        const newReview = {
+            id: `local-${Date.now()}`,
+            author: '나',
+            content: reviewText,
+            rating: rating || null,
+            created_at: new Date().toISOString(),
+            isLocal: true
+        };
+        
+        reviews[movieId].push(newReview);
+        localStorage.setItem('duckflix_reviews', JSON.stringify(reviews));
+        console.log('리뷰 저장 완료:', movieId);
+        return newReview;
+    } catch (error) {
+        console.error('리뷰 저장 오류:', error);
+        return null;
+    }
+}
+
+// LocalStorage에서 리뷰 업데이트
+function updateReviewInLocalStorage(movieId, reviewId, reviewText, rating) {
+    try {
+        const reviews = JSON.parse(localStorage.getItem('duckflix_reviews') || '{}');
+        if (reviews[movieId]) {
+            const reviewIndex = reviews[movieId].findIndex(r => r.id === reviewId);
+            if (reviewIndex !== -1) {
+                reviews[movieId][reviewIndex].content = reviewText;
+                reviews[movieId][reviewIndex].rating = rating || null;
+                reviews[movieId][reviewIndex].created_at = new Date().toISOString();
+                localStorage.setItem('duckflix_reviews', JSON.stringify(reviews));
+                console.log('리뷰 업데이트 완료:', reviewId);
+                return reviews[movieId][reviewIndex];
+            }
+        }
+        return null;
+    } catch (error) {
+        console.error('리뷰 업데이트 오류:', error);
+        return null;
+    }
+}
+
+// LocalStorage에서 리뷰 불러오기
+function getReviewsFromLocalStorage(movieId) {
+    try {
+        const reviews = JSON.parse(localStorage.getItem('duckflix_reviews') || '{}');
+        return reviews[movieId] || [];
+    } catch (error) {
+        console.error('리뷰 불러오기 오류:', error);
+        return [];
+    }
+}
+
+// LocalStorage에서 리뷰 삭제
+function deleteReviewFromLocalStorage(movieId, reviewId) {
+    try {
+        const reviews = JSON.parse(localStorage.getItem('duckflix_reviews') || '{}');
+        if (reviews[movieId]) {
+            reviews[movieId] = reviews[movieId].filter(review => review.id !== reviewId);
+            localStorage.setItem('duckflix_reviews', JSON.stringify(reviews));
+            console.log('리뷰 삭제 완료:', reviewId);
+        }
+    } catch (error) {
+        console.error('리뷰 삭제 오류:', error);
+    }
+}
+
+// 리뷰 개수 표시 업데이트
+function updateReviewsCount(count) {
+    const reviewsCountElement = document.getElementById('reviewsCount');
+    if (reviewsCountElement) {
+        reviewsCountElement.textContent = `(${count})`;
+    }
+}
+
 // 리뷰 가져오기
 async function loadReviews(movieId) {
     const reviewsContainer = document.getElementById('reviewsContainer');
+    
+    // LocalStorage에서 저장된 리뷰 불러오기
+    const localReviews = getReviewsFromLocalStorage(movieId);
     
     try {
         const response = await fetch(`${REVIEWS_API_URL}/${movieId}/reviews?api_key=${API_KEY}&language=ko-KR&page=1`);
@@ -446,28 +557,104 @@ async function loadReviews(movieId) {
         }
         
         const data = await response.json();
-        const reviews = data.results;
+        const tmdbReviews = data.results || [];
         
-        if (reviews.length === 0) {
+        // 리뷰 개수 캐시 업데이트 (TMDB 리뷰 + 로컬 리뷰)
+        reviewCountCache[movieId] = (data.total_results || 0) + localReviews.length;
+        
+        // 로컬 리뷰를 먼저 표시하고, 그 다음 TMDB 리뷰 표시
+        const allReviews = [...localReviews, ...tmdbReviews];
+        
+        // 리뷰 개수 표시 업데이트
+        updateReviewsCount(allReviews.length);
+        
+        if (allReviews.length === 0) {
             reviewsContainer.innerHTML = '<div class="no-reviews">리뷰가 없습니다.</div>';
+            updateReviewsCount(0);
             return;
         }
         
         // 리뷰 렌더링
-        reviewsContainer.innerHTML = reviews.map(review => createReviewCard(review)).join('');
+        reviewsContainer.innerHTML = allReviews.map(review => createReviewCard(review, movieId)).join('');
         
     } catch (error) {
         console.error('Error:', error);
-        reviewsContainer.innerHTML = `<div class="error">리뷰를 불러오는 중 오류가 발생했습니다: ${error.message}</div>`;
+        // 오류가 발생해도 로컬 리뷰는 표시
+        if (localReviews.length > 0) {
+            updateReviewsCount(localReviews.length);
+            reviewsContainer.innerHTML = localReviews.map(review => createReviewCard(review, movieId)).join('');
+        } else {
+            updateReviewsCount(0);
+            reviewsContainer.innerHTML = `<div class="error">리뷰를 불러오는 중 오류가 발생했습니다: ${error.message}</div>`;
+        }
+    }
+}
+
+// 리뷰 개수 캐시
+const reviewCountCache = {};
+
+// 리뷰 개수 가져오기 (호버 시 사용)
+async function loadReviewCount(movieId, cardElement) {
+    // 캐시에 있으면 바로 표시
+    if (reviewCountCache[movieId] !== undefined) {
+        displayReviewCount(movieId, reviewCountCache[movieId], cardElement);
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${REVIEWS_API_URL}/${movieId}/reviews?api_key=${API_KEY}&language=ko-KR&page=1`);
+        
+        if (response.ok) {
+            const data = await response.json();
+            const totalResults = data.total_results || 0;
+            
+            // 캐시에 저장
+            reviewCountCache[movieId] = totalResults;
+            
+            // 표시
+            displayReviewCount(movieId, totalResults, cardElement);
+        } else {
+            // 오류 시 0으로 표시
+            reviewCountCache[movieId] = 0;
+            displayReviewCount(movieId, 0, cardElement);
+        }
+    } catch (error) {
+        console.error('리뷰 개수 로드 오류:', error);
+        reviewCountCache[movieId] = 0;
+        displayReviewCount(movieId, 0, cardElement);
+    }
+}
+
+// 리뷰 개수 표시
+function displayReviewCount(movieId, count, cardElement) {
+    const reviewCountElement = cardElement.querySelector(`#movie-review-count-${movieId}`);
+    if (reviewCountElement) {
+        if (count > 0) {
+            reviewCountElement.textContent = `리뷰 ${count}개`;
+            reviewCountElement.style.display = 'block';
+        } else {
+            reviewCountElement.style.display = 'none';
+        }
     }
 }
 
 // 리뷰 카드 생성
-function createReviewCard(review) {
+function createReviewCard(review, movieId) {
     const author = review.author || '익명';
     const content = review.content || '';
-    const rating = review.author_details?.rating;
-    const createdAt = review.created_at ? new Date(review.created_at).toLocaleDateString('ko-KR') : '';
+    // 로컬 리뷰는 review.rating, TMDB 리뷰는 review.author_details?.rating
+    const rating = review.rating || review.author_details?.rating;
+    let createdAt = '';
+    if (review.created_at) {
+        const date = new Date(review.created_at);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        createdAt = `${year}년 ${month}월 ${day}일 ${hours}:${minutes}`;
+    }
+    const isLocal = review.isLocal || false;
     
     // HTML 태그 제거하고 텍스트만 추출
     const fullText = content.replace(/<[^>]*>/g, '');
@@ -476,10 +663,16 @@ function createReviewCard(review) {
     const reviewId = `review-${review.id || Math.random().toString(36).substr(2, 9)}`;
     
     return `
-        <div class="review-card" id="${reviewId}">
+        <div class="review-card ${isLocal ? 'local-review' : ''}" id="${reviewId}">
             <div class="review-header">
-                <div class="review-author">${author}</div>
+                <div class="review-author">${author} ${isLocal ? '<span class="local-badge">내 리뷰</span>' : ''}</div>
                 ${rating ? `<div class="review-rating">⭐ ${rating}/10</div>` : ''}
+                ${isLocal ? `
+                    <div class="review-actions">
+                        <button class="edit-review-btn" onclick="editLocalReview('${movieId}', '${review.id}')" title="리뷰 수정">✏️</button>
+                        <button class="delete-review-btn" onclick="deleteLocalReview('${movieId}', '${review.id}')" title="리뷰 삭제">×</button>
+                    </div>
+                ` : ''}
             </div>
             ${createdAt ? `<div class="review-date">${createdAt}</div>` : ''}
             <div class="review-content">
@@ -489,6 +682,458 @@ function createReviewCard(review) {
             </div>
         </div>
     `;
+}
+
+// 평점 및 리뷰 일괄 등록 이벤트 설정
+function setupRatingReviewEvents(movieId) {
+    const reviewTextarea = document.getElementById('reviewTextarea');
+    const submitBtn = document.getElementById('submitRatingReviewBtn');
+    
+    if (!submitBtn) return;
+    
+    // 일괄 등록 버튼 클릭
+    submitBtn.addEventListener('click', async function() {
+        const rating = selectedRating || 0; // 평점이 없으면 0점으로 저장
+        const reviewText = reviewTextarea ? reviewTextarea.value.trim() : '';
+        
+        // 리뷰가 필수
+        if (!reviewText) {
+            alert('리뷰를 작성해주세요.');
+            return;
+        }
+        
+        // 평점 및 리뷰 일괄 등록
+        await submitRatingAndReview(movieId, rating, reviewText);
+    });
+    
+    // Ctrl+Enter 키로 제출
+    if (reviewTextarea) {
+        reviewTextarea.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                e.preventDefault();
+                submitBtn.click();
+            }
+        });
+    }
+}
+
+// 평점 및 리뷰 일괄 등록
+async function submitRatingAndReview(movieId, rating, reviewText) {
+    const submitBtn = document.getElementById('submitRatingReviewBtn');
+    
+    // Guest Session이 없으면 생성 시도
+    if (!guestSessionId) {
+        console.log('Guest Session이 없습니다. 생성 중...');
+        const created = await createGuestSession();
+        if (!created) {
+            alert('세션이 준비되지 않았습니다.');
+            return;
+        }
+    }
+    
+    try {
+        submitBtn.disabled = true;
+        submitBtn.textContent = '등록 중...';
+        
+        // 평점이 0보다 큰 경우에만 TMDB API에 평점 제출
+        if (rating > 0) {
+            // 평점 제출 (TMDB API)
+            const response = await fetch(
+                `${RATING_API_URL}/${movieId}/rating?api_key=${API_KEY}&guest_session_id=${guestSessionId}`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        value: rating
+                    })
+                }
+            );
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.status_code === 1 || data.status_code === 12) {
+                    // LocalStorage에 평점 저장
+                    saveRatingToLocalStorage(movieId, rating);
+                } else {
+                    throw new Error(data.status_message || '평점 등록에 실패했습니다.');
+                }
+            } else if (response.status === 401) {
+                // 401 오류 처리
+                console.warn('Guest Session이 만료되었거나 유효하지 않습니다. 새로운 Session 생성 중...');
+                guestSessionId = null;
+                const created = await createGuestSession();
+                if (created) {
+                    await submitRatingAndReview(movieId, rating, reviewText);
+                    return;
+                } else {
+                    alert('세션 생성에 실패했습니다. 페이지를 새로고침해주세요.');
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = '평점 및 리뷰 등록';
+                    return;
+                }
+            } else {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.status_message || '평점 등록에 실패했습니다.');
+            }
+        } else {
+            // 평점이 0이면 LocalStorage에만 저장 (TMDB API 호출 안 함)
+            saveRatingToLocalStorage(movieId, 0);
+        }
+        
+        // 리뷰 저장 (리뷰는 필수이므로 항상 저장)
+        const savedReview = saveReviewToLocalStorage(movieId, reviewText, rating);
+        
+        if (savedReview) {
+            // 리뷰 컨테이너에 새 리뷰 추가
+            const reviewsContainer = document.getElementById('reviewsContainer');
+            const existingReviews = reviewsContainer.innerHTML;
+            
+            // 새 리뷰를 맨 위에 추가
+            const newReviewHTML = createReviewCard(savedReview, movieId);
+            reviewsContainer.innerHTML = newReviewHTML + existingReviews;
+            
+            // 리뷰 개수 캐시 업데이트
+            if (reviewCountCache[movieId] !== undefined) {
+                reviewCountCache[movieId]++;
+            }
+            
+            // 리뷰 개수 표시 업데이트
+            const currentReviewCount = reviewsContainer ? reviewsContainer.children.length : 0;
+            updateReviewsCount(currentReviewCount);
+        }
+        
+        // 텍스트 영역과 별점 초기화
+        const reviewTextarea = document.getElementById('reviewTextarea');
+        if (reviewTextarea) {
+            reviewTextarea.value = '';
+        }
+        resetRating();
+        
+        // 버튼 상태 유지 (등록 완료로 변경하지 않음)
+        submitBtn.disabled = false;
+        submitBtn.textContent = '평점 및 리뷰 등록';
+        
+        // 영화 카드의 평균 평점 업데이트
+        updateMovieCardAverageRating(movieId);
+        
+        alert('평점 및 리뷰가 등록되었습니다!');
+        
+    } catch (error) {
+        console.error('평점 및 리뷰 등록 오류:', error);
+        alert(`오류: ${error.message}`);
+        submitBtn.disabled = false;
+        submitBtn.textContent = '평점 및 리뷰 등록';
+    }
+}
+
+// 리뷰 작성 이벤트 설정 (사용 안 함, 호환성 유지)
+function setupReviewEvents(movieId) {
+    const reviewTextarea = document.getElementById('reviewTextarea');
+    const submitReviewBtn = document.getElementById('submitReviewBtn');
+    
+    if (!reviewTextarea || !submitReviewBtn) return;
+    
+    // 리뷰 작성 버튼 클릭
+    submitReviewBtn.addEventListener('click', function() {
+        const reviewText = reviewTextarea.value.trim();
+        
+        if (!reviewText) {
+            alert('리뷰를 입력해주세요.');
+            return;
+        }
+        
+        // LocalStorage에 리뷰 저장
+        const savedReview = saveReviewToLocalStorage(movieId, reviewText);
+        
+        if (savedReview) {
+            // 리뷰 컨테이너에 새 리뷰 추가
+            const reviewsContainer = document.getElementById('reviewsContainer');
+            const existingReviews = reviewsContainer.innerHTML;
+            
+            // 새 리뷰를 맨 위에 추가
+            const newReviewHTML = createReviewCard(savedReview, movieId);
+            reviewsContainer.innerHTML = newReviewHTML + existingReviews;
+            
+            // 텍스트 영역 초기화
+            reviewTextarea.value = '';
+            
+            // 리뷰 개수 캐시 업데이트
+            if (reviewCountCache[movieId] !== undefined) {
+                reviewCountCache[movieId]++;
+            }
+            
+            alert('리뷰가 작성되었습니다!');
+        } else {
+            alert('리뷰 작성에 실패했습니다.');
+        }
+    });
+    
+    // Enter 키로 제출 (Shift+Enter는 줄바꿈)
+    reviewTextarea.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            submitReviewBtn.click();
+        }
+    });
+}
+
+// 로컬 리뷰 수정
+function editLocalReview(movieId, reviewId) {
+    const reviews = getReviewsFromLocalStorage(movieId);
+    const review = reviews.find(r => r.id === reviewId);
+    
+    if (!review) return;
+    
+    // 수정 폼 표시
+    const reviewElement = document.getElementById(`review-${reviewId}`);
+    if (!reviewElement) return;
+    
+    // 위의 큰 별점 비활성화
+    const starRating = document.getElementById('starRating');
+    if (starRating) {
+        starRating.style.pointerEvents = 'none';
+        starRating.style.opacity = '0.5';
+    }
+    
+    const contentDiv = reviewElement.querySelector('.review-content');
+    const currentText = review.content || '';
+    const currentRating = review.rating || 0;
+    
+    // 별점 선택 UI 생성
+    let starRatingHTML = '';
+    for (let i = 1; i <= 10; i++) {
+        const isActive = i <= currentRating;
+        starRatingHTML += `<span class="edit-star ${isActive ? 'active' : ''}" data-rating="${i}" onclick="selectEditRating(${i}, '${movieId}', '${reviewId}')">⭐</span>`;
+    }
+    
+    contentDiv.innerHTML = `
+        <div class="edit-rating-section">
+            <label>평점: <span id="edit-rating-value-${reviewId}">${currentRating}</span>/10</label>
+            <div class="edit-star-rating" id="edit-star-rating-${reviewId}">
+                ${starRatingHTML}
+            </div>
+        </div>
+        <textarea class="edit-review-textarea" rows="4">${currentText}</textarea>
+        <div class="edit-review-actions">
+            <button class="save-review-btn" onclick="saveEditedReview('${movieId}', '${reviewId}')">저장</button>
+            <button class="cancel-edit-btn" onclick="cancelEditReview('${movieId}', '${reviewId}')">취소</button>
+        </div>
+    `;
+    
+    // 수정 중인 평점 저장
+    window.currentEditRating = currentRating;
+}
+
+// 수정 중 평점 선택
+function selectEditRating(rating, movieId, reviewId) {
+    window.currentEditRating = rating;
+    const ratingValue = document.getElementById(`edit-rating-value-${reviewId}`);
+    if (ratingValue) {
+        ratingValue.textContent = rating;
+    }
+    
+    // 별점 업데이트
+    const stars = document.querySelectorAll(`#edit-star-rating-${reviewId} .edit-star`);
+    stars.forEach((star, index) => {
+        if (index + 1 <= rating) {
+            star.classList.add('active');
+        } else {
+            star.classList.remove('active');
+        }
+    });
+}
+
+// 수정된 리뷰 저장
+async function saveEditedReview(movieId, reviewId) {
+    const reviewElement = document.getElementById(`review-${reviewId}`);
+    if (!reviewElement) return;
+    
+    const textarea = reviewElement.querySelector('.edit-review-textarea');
+    const newText = textarea ? textarea.value.trim() : '';
+    const newRating = window.currentEditRating || 0;
+    
+    if (!newText) {
+        alert('리뷰 내용을 입력해주세요.');
+        return;
+    }
+    
+    // Guest Session이 없으면 생성 시도
+    if (!guestSessionId) {
+        console.log('Guest Session이 없습니다. 생성 중...');
+        const created = await createGuestSession();
+        if (!created) {
+            alert('세션이 준비되지 않았습니다.');
+            return;
+        }
+    }
+    
+    try {
+        // TMDB API에 평점 업데이트
+        const response = await fetch(
+            `${RATING_API_URL}/${movieId}/rating?api_key=${API_KEY}&guest_session_id=${guestSessionId}`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    value: newRating
+                })
+            }
+        );
+        
+        if (response.ok) {
+            // LocalStorage에 평점 저장
+            saveRatingToLocalStorage(movieId, newRating);
+            
+            // LocalStorage에 리뷰 업데이트
+            const updatedReview = updateReviewInLocalStorage(movieId, reviewId, newText, newRating);
+            
+            if (updatedReview) {
+                // 리뷰 카드 다시 렌더링
+                const newReviewHTML = createReviewCard(updatedReview, movieId);
+                reviewElement.outerHTML = newReviewHTML;
+                
+                // 평균 평점 업데이트
+                updateMovieCardAverageRating(movieId);
+                
+                // 위의 큰 별점 다시 활성화
+                const starRating = document.getElementById('starRating');
+                if (starRating) {
+                    starRating.style.pointerEvents = 'auto';
+                    starRating.style.opacity = '1';
+                }
+            }
+        } else {
+            throw new Error('평점 업데이트에 실패했습니다.');
+        }
+    } catch (error) {
+        console.error('리뷰 수정 오류:', error);
+        alert('수정 중 오류가 발생했습니다.');
+    }
+}
+
+// 리뷰 수정 취소
+function cancelEditReview(movieId, reviewId) {
+    const reviews = getReviewsFromLocalStorage(movieId);
+    const review = reviews.find(r => r.id === reviewId);
+    
+    if (!review) return;
+    
+    // 위의 큰 별점 다시 활성화
+    const starRating = document.getElementById('starRating');
+    if (starRating) {
+        starRating.style.pointerEvents = 'auto';
+        starRating.style.opacity = '1';
+    }
+    
+    // 원래 리뷰 카드 다시 렌더링
+    const reviewElement = document.getElementById(`review-${reviewId}`);
+    if (reviewElement) {
+        const newReviewHTML = createReviewCard(review, movieId);
+        reviewElement.outerHTML = newReviewHTML;
+    }
+}
+
+// 로컬 리뷰 삭제 (리뷰와 평점 모두 삭제)
+async function deleteLocalReview(movieId, reviewId) {
+    if (!confirm('리뷰와 평점을 모두 삭제하시겠습니까?')) {
+        return;
+    }
+    
+    // Guest Session이 없으면 생성 시도
+    if (!guestSessionId) {
+        console.log('Guest Session이 없습니다. 생성 중...');
+        const created = await createGuestSession();
+        if (!created) {
+            alert('세션이 준비되지 않았습니다.');
+            return;
+        }
+    }
+    
+    try {
+        // TMDB API에서 평점 삭제
+        const deleteUrl = `${RATING_API_URL}/${movieId}/rating?api_key=${API_KEY}&guest_session_id=${guestSessionId}`;
+        await fetch(deleteUrl, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        // LocalStorage에서 리뷰 삭제
+        deleteReviewFromLocalStorage(movieId, reviewId);
+        
+        // LocalStorage에서 평점도 삭제
+        removeRatingFromLocalStorage(movieId);
+        
+        // 화면에서 제거
+        const reviewElement = document.getElementById(`review-${reviewId}`);
+        if (reviewElement) {
+            reviewElement.remove();
+        }
+        
+        // 리뷰 개수 캐시 업데이트
+        if (reviewCountCache[movieId] !== undefined && reviewCountCache[movieId] > 0) {
+            reviewCountCache[movieId]--;
+        }
+        
+        // 리뷰 개수 표시 업데이트
+        const reviewsContainer = document.getElementById('reviewsContainer');
+        if (reviewsContainer) {
+            const currentReviewCount = reviewsContainer.children.length;
+            updateReviewsCount(currentReviewCount);
+            
+            // 리뷰가 없으면 메시지 표시
+            if (currentReviewCount === 0) {
+                reviewsContainer.innerHTML = '<div class="no-reviews">리뷰가 없습니다.</div>';
+                updateReviewsCount(0);
+            }
+        }
+        
+        // 평균 평점 업데이트
+        updateMovieCardAverageRating(movieId);
+        
+        // 별점 초기화
+        resetRating();
+        
+        // 등록 버튼 활성화
+        const submitBtn = document.getElementById('submitRatingReviewBtn');
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = '평점 및 리뷰 등록';
+        }
+    } catch (error) {
+        console.error('리뷰 및 평점 삭제 오류:', error);
+        alert('삭제 중 오류가 발생했습니다.');
+    }
+}
+
+// 영화의 평균 평점 계산
+function calculateAverageRating(movieId) {
+    const reviews = getReviewsFromLocalStorage(movieId);
+    const ratings = reviews.filter(r => r.rating !== null && r.rating !== undefined).map(r => r.rating);
+    
+    if (ratings.length === 0) {
+        return null;
+    }
+    
+    const sum = ratings.reduce((acc, rating) => acc + rating, 0);
+    const average = sum / ratings.length;
+    return parseFloat(average.toFixed(2));
+}
+
+// 영화 카드의 평균 평점 업데이트
+function updateMovieCardAverageRating(movieId) {
+    const averageRating = calculateAverageRating(movieId);
+    
+    if (averageRating !== null) {
+        updateMovieCardRating(movieId, averageRating);
+    } else {
+        removeMovieCardRating(movieId);
+    }
 }
 
 // 리뷰 전체/요약 토글
@@ -530,12 +1175,12 @@ async function createGuestSession() {
     }
 }
 
-// 평점 이벤트 설정
+// 평점 이벤트 설정 (별점 선택용만)
 function setupRatingEvents() {
     const stars = document.querySelectorAll('.star');
-    const submitBtn = document.getElementById('submitRatingBtn');
     const deleteBtn = document.getElementById('deleteRatingBtn');
-    const ratingMessage = document.getElementById('ratingMessage');
+    
+    if (stars.length === 0) return;
     
     // 별점 클릭 이벤트
     stars.forEach(star => {
@@ -543,19 +1188,9 @@ function setupRatingEvents() {
             selectedRating = parseInt(this.dataset.rating);
             updateStarRating(selectedRating);
             
-            // 평점이 변경되면 제출 버튼 활성화
-            const submitBtn = document.getElementById('submitRatingBtn');
-            const deleteBtn = document.getElementById('deleteRatingBtn');
-            const ratingMessage = document.getElementById('ratingMessage');
-            
-            submitBtn.disabled = false;
-            submitBtn.textContent = '평점 제출';
-            
-            // 기존 평점이 있었던 경우 메시지 표시
-            if (deleteBtn.style.display === 'block') {
-                showRatingMessage('새로운 평점을 선택했습니다.', '#808080');
-            } else {
-                hideRatingMessage();
+            // 기존 평점이 있었던 경우 삭제 버튼 상태 확인
+            if (deleteBtn && deleteBtn.style.display === 'block') {
+                // 새로운 평점 선택 시 삭제 버튼은 유지
             }
         });
         
@@ -566,34 +1201,24 @@ function setupRatingEvents() {
     });
     
     // 별점 영역에서 마우스가 벗어나면 선택된 평점으로 복원
-    document.getElementById('starRating').addEventListener('mouseleave', function() {
-        highlightStars(selectedRating);
-    });
+    const starRating = document.getElementById('starRating');
+    if (starRating) {
+        starRating.addEventListener('mouseleave', function() {
+            highlightStars(selectedRating);
+        });
+    }
     
-    // 평점 제출 버튼
-    submitBtn.addEventListener('click', function() {
-        if (selectedRating === 0) {
-            showRatingMessage('평점을 선택해주세요.', '#e50914');
-            return;
-        }
-        
-        if (!guestSessionId) {
-            showRatingMessage('세션이 준비되지 않았습니다. 잠시 후 다시 시도해주세요.', '#e50914');
-            return;
-        }
-        
-        submitRating(currentMovieId, selectedRating);
-    });
-    
-    // 평점 삭제 버튼
-    deleteBtn.addEventListener('click', function() {
-        if (!guestSessionId) {
-            showRatingMessage('세션이 준비되지 않았습니다. 잠시 후 다시 시도해주세요.', '#e50914');
-            return;
-        }
-        
-        deleteRating(currentMovieId);
-    });
+    // 평점 삭제 버튼 이벤트
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', function() {
+            if (!guestSessionId) {
+                alert('세션이 준비되지 않았습니다. 잠시 후 다시 시도해주세요.');
+                return;
+            }
+            
+            deleteRating(currentMovieId);
+        });
+    }
 }
 
 // 별점 업데이트
@@ -623,6 +1248,97 @@ function highlightStars(rating) {
     });
     
     console.log(`별점 하이라이트: ${rating}/10, 활성화된 별 개수: ${document.querySelectorAll('.star.active').length}`);
+}
+
+// LocalStorage에 평점 저장
+function saveRatingToLocalStorage(movieId, rating) {
+    try {
+        const ratings = JSON.parse(localStorage.getItem('duckflix_ratings') || '{}');
+        ratings[movieId] = rating;
+        localStorage.setItem('duckflix_ratings', JSON.stringify(ratings));
+        console.log('평점 저장 완료:', movieId, rating);
+    } catch (error) {
+        console.error('평점 저장 오류:', error);
+    }
+}
+
+// LocalStorage에서 평점 불러오기
+function getRatingFromLocalStorage(movieId) {
+    try {
+        const ratings = JSON.parse(localStorage.getItem('duckflix_ratings') || '{}');
+        return ratings[movieId] || null;
+    } catch (error) {
+        console.error('평점 불러오기 오류:', error);
+        return null;
+    }
+}
+
+// LocalStorage에서 평점 제거
+function removeRatingFromLocalStorage(movieId) {
+    try {
+        const ratings = JSON.parse(localStorage.getItem('duckflix_ratings') || '{}');
+        delete ratings[movieId];
+        localStorage.setItem('duckflix_ratings', JSON.stringify(ratings));
+        console.log('평점 제거 완료:', movieId);
+    } catch (error) {
+        console.error('평점 제거 오류:', error);
+    }
+}
+
+// 모달 열 때 LocalStorage에서 평점 불러오기
+function loadRatingFromLocalStorage(movieId) {
+    const savedRating = getRatingFromLocalStorage(movieId);
+    
+    if (savedRating) {
+        // 저장된 평점이 있는 경우
+        selectedRating = savedRating;
+        
+        // DOM 요소가 준비될 때까지 대기
+        let retryCount = 0;
+        const maxRetries = 10;
+        
+        const waitForDOM = () => {
+            const ratingValue = document.getElementById('ratingValue');
+            const submitBtn = document.getElementById('submitRatingBtn');
+            const deleteBtn = document.getElementById('deleteRatingBtn');
+            const stars = document.querySelectorAll('.star');
+            
+            if ((!ratingValue || !submitBtn || !deleteBtn || stars.length === 0) && retryCount < maxRetries) {
+                retryCount++;
+                setTimeout(waitForDOM, 100);
+                return;
+            }
+            
+            // DOM 요소가 준비되었거나 최대 재시도 횟수에 도달
+            if (ratingValue) {
+                ratingValue.textContent = savedRating;
+            }
+            
+            // 별점 업데이트
+            setTimeout(() => {
+                if (stars.length > 0) {
+                    highlightStars(savedRating);
+                }
+            }, 50);
+            
+            // 버튼 상태
+            if (submitBtn) {
+                submitBtn.textContent = '평점 제출 완료';
+                submitBtn.disabled = true;
+            }
+            if (deleteBtn) {
+                deleteBtn.style.display = 'block';
+            }
+            
+            // 메시지 표시 (2초 후 사라짐)
+            showRatingMessage(`내 평점: ${savedRating}/10`, '#4CAF50');
+        };
+        
+        waitForDOM();
+    } else {
+        // 저장된 평점이 없는 경우 - 초기화
+        resetRating();
+    }
 }
 
 // 별점 초기화
@@ -728,6 +1444,9 @@ async function submitRating(movieId, rating) {
                 // 삭제 버튼 표시
                 deleteBtn.style.display = 'block';
                 
+                // LocalStorage에 평점 저장
+                saveRatingToLocalStorage(movieId, rating);
+                
                 // 영화 카드의 평점도 업데이트
                 updateMovieCardRating(movieId, rating);
             } else {
@@ -826,6 +1545,9 @@ async function deleteRating(movieId) {
                 submitBtn.textContent = '평점 제출';
                 selectedRating = 0;
                 
+                // LocalStorage에서 평점 제거
+                removeRatingFromLocalStorage(movieId);
+                
                 // 영화 카드의 평점도 제거
                 removeMovieCardRating(movieId);
             } else {
@@ -841,6 +1563,9 @@ async function deleteRating(movieId) {
                 submitBtn.disabled = false;
                 submitBtn.textContent = '평점 제출';
                 selectedRating = 0;
+                
+                // LocalStorage에서 평점 제거
+                removeRatingFromLocalStorage(movieId);
                 
                 // 영화 카드의 평점도 제거
                 removeMovieCardRating(movieId);
